@@ -7,14 +7,19 @@
 
 import { BigNumber, Signer, Wallet } from 'ethers'
 import { JsonRpcProvider } from '@ethersproject/providers'
-import { formatEther, keccak256, parseEther } from 'ethers/lib/utils'
-import { Command } from 'commander'
-import { DeterministicDeployer, erc4337RuntimeVersion, SimpleAccountFactory__factory } from '@account-abstraction/utils'
+import { formatEther, parseEther } from 'ethers/lib/utils'
+import { Command, OptionValues } from 'commander'
+import {
+  DeterministicDeployer,
+  erc4337RuntimeVersion,
+  SimpleAccountFactory__factory
+} from '@account-abstraction/utils'
 import fs from 'fs'
 import { HttpRpcClient, SimpleAccountAPI } from '@account-abstraction/sdk'
 import { runBundler } from '../runBundler'
 import { BundlerServer } from '../BundlerServer'
 import { getNetworkProvider } from '../Config'
+import { Interface } from '@ethersproject/abi'
 
 const ENTRY_POINT = '0x0000000071727De22E5E9d8BAf0edAc6f37da032'
 
@@ -36,8 +41,7 @@ class Runner {
     readonly accountOwner: Signer,
     readonly entryPointAddress = ENTRY_POINT,
     readonly index = 0
-  ) {
-  }
+  ) {}
 
   async getAddress (): Promise<string> {
     return await this.accountApi.getCounterFactualAddress()
@@ -47,17 +51,32 @@ class Runner {
     const net = await this.provider.getNetwork()
     const chainId = net.chainId
     const dep = new DeterministicDeployer(this.provider)
-    const accountDeployer = await DeterministicDeployer.getAddress(new SimpleAccountFactory__factory(), 0, [this.entryPointAddress])
+    const accountDeployer = DeterministicDeployer.getAddress(
+      new SimpleAccountFactory__factory(),
+      0,
+      [this.entryPointAddress]
+    )
     // const accountDeployer = await new SimpleAccountFactory__factory(this.provider.getSigner()).deploy().then(d=>d.address)
-    if (!await dep.isContractDeployed(accountDeployer)) {
+    if (!(await dep.isContractDeployed(accountDeployer))) {
       if (deploymentSigner == null) {
-        console.log(`AccountDeployer not deployed at ${accountDeployer}. run with --deployFactory`)
+        console.log(
+          `AccountDeployer not deployed at ${accountDeployer}. run with --deployFactory`
+        )
         process.exit(1)
       }
-      const dep1 = new DeterministicDeployer(deploymentSigner.provider as any, deploymentSigner)
-      await dep1.deterministicDeploy(new SimpleAccountFactory__factory(), 0, [this.entryPointAddress])
+      const dep1 = new DeterministicDeployer(
+        deploymentSigner?.provider as any,
+        deploymentSigner
+      )
+      await dep1.deterministicDeploy(new SimpleAccountFactory__factory(), 0, [
+        this.entryPointAddress
+      ])
     }
-    this.bundlerProvider = new HttpRpcClient(this.bundlerUrl, this.entryPointAddress, chainId)
+    this.bundlerProvider = new HttpRpcClient(
+      this.bundlerUrl,
+      this.entryPointAddress,
+      chainId
+    )
     this.accountApi = new SimpleAccountAPI({
       provider: this.provider,
       entryPointAddress: this.entryPointAddress,
@@ -74,7 +93,11 @@ class Runner {
     if (match != null) {
       const paid = Math.floor(parseInt(match[1]) / 1e9)
       const expected = Math.floor(parseInt(match[2]) / 1e9)
-      return new Error(`Error: Paid ${paid}, expected ${expected} . Paid ${Math.floor(paid / expected * 100)}%, missing ${expected - paid} `)
+      return new Error(
+        `Error: Paid ${paid}, expected ${expected} . Paid ${Math.floor(
+          (paid / expected) * 100
+        )}%, missing ${expected - paid} `
+      )
     }
     return e
   }
@@ -94,23 +117,9 @@ class Runner {
   }
 }
 
-async function main (): Promise<void> {
-  const program = new Command()
-    .version(erc4337RuntimeVersion)
-    .option('--network <string>', 'network name or url', 'http://localhost:8545')
-    .option('--mnemonic <file>', 'mnemonic/private-key file of signer account (to fund account)')
-    .option('--bundlerUrl <url>', 'bundler URL', 'http://localhost:3000/rpc')
-    .option('--entryPoint <string>', 'address of the supported EntryPoint contract', ENTRY_POINT)
-    .option('--nonce <number>', 'account creation nonce. default to random (deploy new account)')
-    .option('--deployFactory', 'Deploy the "account deployer" on this network (default for testnet)')
-    .option('--show-stack-traces', 'Show stack traces.')
-    .option('--selfBundler', 'run bundler in-process (for debugging the bundler)')
-
-  const opts = program.parse().opts()
-  const provider = getNetworkProvider(opts.network)
-  let signer: Signer
-  let deployFactory: boolean = opts.deployFactory
+async function getBundler (opts: OptionValues, provider: JsonRpcProvider) {
   let bundler: BundlerServer | undefined
+
   if (opts.selfBundler != null) {
     // todo: if node is geth, we need to fund our bundler's account:
     const signer = provider.getSigner()
@@ -126,20 +135,49 @@ async function main (): Promise<void> {
       })
     }
 
-    const argv = ['node', 'exec', '--config', './localconfig/bundler.config.json', '--unsafe', '--auto']
+    const argv = [
+      'node',
+      'exec',
+      '--config',
+      './localconfig/bundler.config.json',
+      '--unsafe',
+      '--auto'
+    ]
     if (opts.entryPoint != null) {
       argv.push('--entryPoint', opts.entryPoint)
     }
     bundler = await runBundler(argv)
     await bundler.asyncStart()
   }
+  return bundler
+}
+
+async function getAccountOwnerAndSignerAndDeployFactory (
+  opts: OptionValues,
+  provider: JsonRpcProvider
+): Promise<{
+    accountOwner: Wallet
+    signer: Signer
+    deployFactory: boolean
+  }> {
+  let accountOwner: Wallet
+  let signer: Signer
+  let deployFactory = false
+
   if (opts.mnemonic != null) {
-    signer = Wallet.fromMnemonic(fs.readFileSync(opts.mnemonic, 'ascii').trim()).connect(provider)
+    accountOwner = Wallet.fromMnemonic(
+      fs.readFileSync(opts.mnemonic, 'ascii').trim()
+    )
+    signer = accountOwner.connect(provider)
   } else {
+    accountOwner = new Wallet('0x'.padEnd(66, '7'))
+
     try {
       const accounts = await provider.listAccounts()
       if (accounts.length === 0) {
-        console.log('fatal: no account. use --mnemonic (needed to fund account)')
+        console.log(
+          'fatal: no account. use --mnemonic (needed to fund account)'
+        )
         process.exit(1)
       }
       // for hardhat/node, use account[0]
@@ -152,48 +190,141 @@ async function main (): Promise<void> {
       throw new Error('must specify --mnemonic')
     }
   }
-  const accountOwner = new Wallet('0x'.padEnd(66, '7'))
+  return {
+    accountOwner,
+    signer,
+    deployFactory
+  }
+}
 
-  const index = opts.nonce ?? Date.now()
-  console.log('using account index=', index)
-  const client = await new Runner(provider, opts.bundlerUrl, accountOwner, opts.entryPoint, index).init(deployFactory ? signer : undefined)
-
-  const addr = await client.getAddress()
-
+async function fund (
+  provider: JsonRpcProvider,
+  walletAddress: string,
+  accountOwner: Wallet,
+  signer: Signer
+) {
   async function isDeployed (addr: string): Promise<boolean> {
-    return await provider.getCode(addr).then(code => code !== '0x')
+    return await provider.getCode(addr).then((code) => code !== '0x')
   }
 
   async function getBalance (addr: string): Promise<BigNumber> {
     return await provider.getBalance(addr)
   }
 
-  const bal = await getBalance(addr)
-  console.log('account address', addr, 'deployed=', await isDeployed(addr), 'bal=', formatEther(bal))
+  const bal = await getBalance(walletAddress)
+  console.log(
+    `eoa address ${accountOwner.address}`,
+    `contract wallet address ${walletAddress}`,
+    `deployed ${await isDeployed(walletAddress)}`,
+    `balance ${formatEther(bal)}`
+  )
+
   const gasPrice = await provider.getGasPrice()
-  // TODO: actual required val
   const requiredBalance = gasPrice.mul(4e6)
   if (bal.lt(requiredBalance.div(2))) {
     console.log('funding account to', requiredBalance.toString())
-    await signer.sendTransaction({
-      to: addr,
-      value: requiredBalance.sub(bal)
-    }).then(async tx => await tx.wait())
+    await signer
+      .sendTransaction({
+        to: walletAddress,
+        value: requiredBalance.sub(bal)
+      })
+      .then(async (tx) => await tx.wait())
   } else {
     console.log('not funding account. balance is enough')
   }
+}
 
-  const dest = addr
-  const data = keccak256(Buffer.from('entryPoint()')).slice(0, 10)
-  console.log('data=', data)
-  await client.runUserOp(dest, data)
-  console.log('after run1')
-  // client.accountApi.overheads!.perUserOp = 30000
-  await client.runUserOp(dest, data)
-  console.log('after run2')
+/// TODO: HERE
+function makeUserOpForERC20Transfer (): { target: string, callData: string } {
+  const erc20Interface = new Interface([
+    'function transfer(address _receiver, uint256 _value) public returns (bool success)',
+    'function transferFrom(address, address, uint256) public returns (bool)',
+    'function approve(address _spender, uint256 _value) public returns (bool success)',
+    'function allowance(address _owner, address _spender) public view returns (uint256 remaining)',
+    'function balanceOf(address _owner) public view returns (uint256 balance)',
+    'event Approval(address indexed _owner, address indexed _spender, uint256 _value)'
+  ])
+
+  const balanceOf = erc20Interface.encodeFunctionData('balanceOf', [
+    '0x60809a1cbd827964927fed29b67e50546d1101e6'
+  ])
+
+  const transfer = erc20Interface.encodeFunctionData('transfer', [
+    '0x85AE3Cab6101EDD49114Dc98120aA37776CbfF54',
+    1000
+  ])
+
+  const erc20ContractAddress = '0xac98bd49eA94315908c079E22324859DA83e6582'
+
+  return {
+    target: erc20ContractAddress,
+    callData: transfer
+  }
+}
+
+async function main (): Promise<void> {
+  const program = new Command()
+    .version(erc4337RuntimeVersion)
+    .option(
+      '--network <string>',
+      'network name or url',
+      'http://localhost:8545'
+    )
+    .option(
+      '--mnemonic <file>',
+      'mnemonic/private-key file of signer account (to fund account)',
+      './localconfig/mnemonic.txt'
+    )
+    .option('--bundlerUrl <url>', 'bundler URL', 'http://localhost:3000/rpc')
+    .option(
+      '--entryPoint <string>',
+      'address of the supported EntryPoint contract',
+      ENTRY_POINT
+    )
+    .option(
+      '--nonce <number>',
+      'account creation nonce. default to random (deploy new account)',
+      '0'
+    )
+    .option(
+      '--deployFactory',
+      'Deploy the "account deployer" on this network (default for testnet)'
+    )
+    .option('--show-stack-traces', 'Show stack traces.')
+    .option(
+      '--selfBundler',
+      'run bundler in-process (for debugging the bundler)'
+    )
+
+  const opts = program.parse().opts()
+  const provider = getNetworkProvider(opts.network)
+  const bundler = await getBundler(opts, provider)
+
+  const { accountOwner, signer, deployFactory } =
+    await getAccountOwnerAndSignerAndDeployFactory(opts, provider)
+
+  const index = opts.nonce ?? Date.now()
+  const client = await new Runner(
+    provider,
+    opts.bundlerUrl,
+    accountOwner,
+    opts.entryPoint,
+    index
+  ).init(deployFactory ? signer : undefined)
+
+  const walletAddress = await client.getAddress()
+  await fund(provider, walletAddress, accountOwner, signer)
+
+  /// TODO: HERE
+  const { target, callData } = makeUserOpForERC20Transfer()
+  await client.runUserOp(target, callData)
+
   await bundler?.stop()
 }
 
 void main()
-  .catch(e => { console.log(e); process.exit(1) })
+  .catch((e) => {
+    console.log(e)
+    process.exit(1)
+  })
   .then(() => process.exit(0))
