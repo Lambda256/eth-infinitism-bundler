@@ -27,6 +27,7 @@
     "@account-abstraction/contracts": "^0.7.0",
     "@account-abstraction/sdk": "^0.7.0",
     "@account-abstraction/utils": "^0.7.0",
+    "@openzeppelin/contracts": "^5.0.1",
     "@account-abstraction/validation-manager": "^0.7.0",
     "@ethereumjs/rlp": "^5.0.2",
     "@ethersproject/abi": "^5.7.0",
