@@ -7,7 +7,6 @@ import {
 import { JsonRpcProvider } from '@ethersproject/providers'
 import TokenArtifact from '../artifacts/contracts/Token.sol/Token.json'
 import EntryPointArtifact from '@account-abstraction/contracts/artifacts/EntryPoint.json'
-import LambdaAccountFactoryArtifact from '../artifacts/contracts/LambdaAccountFactory.sol/LambdaAccountFactory.json'
 import hre from 'hardhat'
 
 export const contractSalt =
@@ -84,12 +83,6 @@ const deployContracts: DeployFunction = async function (
   const entryPointAddress = await checkAndDeployContract(
     hre.ethers.provider,
     EntryPointArtifact
-  )
-
-  const accountFactoryAddress = await deployWithParams(
-    hre.ethers.provider,
-    LambdaAccountFactoryArtifact,
-    [entryPointAddress]
   )
 
   const tokenAddress = await checkAndDeployContract(

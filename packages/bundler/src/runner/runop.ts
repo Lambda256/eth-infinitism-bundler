@@ -164,6 +164,11 @@ async function getAccountOwnerAndSignerAndDeployFactory (
   let signer: Signer
   let deployFactory = false
 
+  const network = await provider.getNetwork()
+  if (network.chainId === 1337 || network.chainId === 31337) {
+    deployFactory = true
+  }
+
   if (opts.mnemonic != null) {
     accountOwner = Wallet.fromMnemonic(
       fs.readFileSync(opts.mnemonic, 'ascii').trim()
@@ -186,10 +191,6 @@ async function getAccountOwnerAndSignerAndDeployFactory (
     }
     // for hardhat/node, use account[0]
     signer = provider.getSigner()
-    const network = await provider.getNetwork()
-    if (network.chainId === 1337 || network.chainId === 31337) {
-      deployFactory = true
-    }
   } catch (e) {
     throw new Error('must specify --mnemonic')
   }
