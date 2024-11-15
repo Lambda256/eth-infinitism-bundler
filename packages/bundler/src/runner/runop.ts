@@ -169,26 +169,29 @@ async function getAccountOwnerAndSignerAndDeployFactory (
       fs.readFileSync(opts.mnemonic, 'ascii').trim()
     )
     signer = accountOwner.connect(provider)
-  } else {
-    accountOwner = new Wallet('0x'.padEnd(66, '7'))
-
-    try {
-      const accounts = await provider.listAccounts()
-      if (accounts.length === 0) {
-        console.log(
-          'fatal: no account. use --mnemonic (needed to fund account)'
-        )
-        process.exit(1)
-      }
-      // for hardhat/node, use account[0]
-      signer = provider.getSigner()
-      const network = await provider.getNetwork()
-      if (network.chainId === 1337 || network.chainId === 31337) {
-        deployFactory = true
-      }
-    } catch (e) {
-      throw new Error('must specify --mnemonic')
+    return {
+      accountOwner,
+      signer,
+      deployFactory
     }
+  }
+
+  accountOwner = new Wallet('0x'.padEnd(66, '7'))
+
+  try {
+    const accounts = await provider.listAccounts()
+    if (accounts.length === 0) {
+      console.log('fatal: no account. use --mnemonic (needed to fund account)')
+      process.exit(1)
+    }
+    // for hardhat/node, use account[0]
+    signer = provider.getSigner()
+    const network = await provider.getNetwork()
+    if (network.chainId === 1337 || network.chainId === 31337) {
+      deployFactory = true
+    }
+  } catch (e) {
+    throw new Error('must specify --mnemonic')
   }
   return {
     accountOwner,
