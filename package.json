@@ -52,5 +52,9 @@
     "webpack": "^5.74.0",
     "webpack-cli": "^4.10.0"
   },
+  "resolutions": {
+    "**/hardhat-deploy/axios": "0.34.0",
+    "**/nx/axios": "1.20.0"
+  },
   "packageManager": "yarn@1.22.19"
 }

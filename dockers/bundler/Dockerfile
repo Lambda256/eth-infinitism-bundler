@@ -1,4 +1,4 @@
-FROM node:16-buster-slim
+FROM node:22.23.4-bookworm-slim
 WORKDIR /app/
 COPY dist/bundler.js /app/
 COPY bundler.sh /app/
